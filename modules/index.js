@@ -1,18 +1,36 @@
-var Promise = require('bluebird');
 var React = require('react');
 var assign = require('react/lib/Object.assign');
 var Router = require('react-router');
-var { RouteHandlerMixin } = Router;
 var warning = require('react/lib/warning');
+var { RouteHandlerMixin } = Router;
 
 var getAsyncProps = (components, info) => {
-  return Promise.all(components.map((component) => {
-    var asyncProps = component.asyncProps || {};
-    return Promise.props(Object.keys(asyncProps).reduce((promises, propName) => {
-      promises[propName] = asyncProps[propName].load(info);
-      return promises;
-    }, {}));
-  }));
+  var loaders = components.reduce(function(loaders, component) {
+    if (component.hasOwnProperty('asyncProps')) {
+      Object.keys(component.asyncProps).forEach(function(propName) {
+        loaders.push(component.asyncProps[propName].load(info));
+      });
+    }
+
+    return loaders;
+  }, []);
+
+  return Promise.all(loaders).then(function(result) {
+    var cursor = 0;
+
+    return components.reduce(function(propSet, component) {
+      var props = {};
+
+      if (component.hasOwnProperty('asyncProps')) {
+        props = Object.keys(component.asyncProps).reduce(function(props, propName) {
+          props[propName] = result[cursor++];
+          return props;
+        }, {});
+      }
+
+      return propSet.concat(props);
+    }, []);
+  });
 };
 
 var runHooks = (hook, handler, asyncState) => {
@@ -135,7 +153,7 @@ var runRouter = (router, callback) => {
     getAsyncProps(handlers, routerState).then((props) => {
       setState({ props });
       callback(Root, routerState, state.props);
-    }).done();
+    });
   };
 
   router.run((Handler, routerState) => {
@@ -162,4 +180,3 @@ module.exports = {
   getAsyncProps,
   RouteHandler
 };
-
